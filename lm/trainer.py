@@ -2,16 +2,22 @@ from pathlib import Path
 
 from typing import Union, Dict
 
+from sacred import Experiment
+
 from flair.data import Dictionary
 from flair.models import LanguageModel
 from flair.trainers.language_model_trainer import LanguageModelTrainer
 
 from lm.custom_lm import WordLanguageModel, CharLanguageModel, CustomTextCorpus
 from lm.preprocessing import ENCODING, EOS_NEWLINE
-from lm.configs import TEST_CHAR_LM_OPTIONS, TEST_CHAR_TRAIN_OPTIONS, TEST_WORD_LM_OPTIONS, TEST_WORD_TRAIN_OPTIONS
+from lm.configs import TEST_CHAR_LM_OPTIONS, TEST_CHAR_TRAIN_OPTIONS, TEST_WORD_LM_OPTIONS, TEST_WORD_TRAIN_OPTIONS, WORD_LM_OPTIONS, WORD_TRAIN_OPTIONS
+
+
 
 IS_FORWARD_LM = True  # we only do forward LMs.
 
+ex = Experiment()
+@ex.automain
 def train(PATH2CORPUS: Union[Path, str], LANG: str, VOCABFILE: str, PATHOUT: Union[Path, str],
           IS_CHAR_DATASET: bool, LM_OPTIONS: Dict, TRAIN_OPTIONS: Dict) -> None:
     """
@@ -95,25 +101,25 @@ def train(PATH2CORPUS: Union[Path, str], LANG: str, VOCABFILE: str, PATHOUT: Uni
 if __name__ == "__main__":
 
     char_lm_config = dict(
-        PATH2CORPUS='../data/is/char_test_corpus',
+        PATH2CORPUS='./wplmdata-preprocessed/is/char_test_corpus',
         LANG='is',
         VOCABFILE='flair_vocab_cutoff5.pkl',
-        PATHOUT='/tmp/test_char_lm',
+        PATHOUT='./models.d/test_char_lm',
         IS_CHAR_DATASET=True,
         LM_OPTIONS=TEST_CHAR_LM_OPTIONS,
         TRAIN_OPTIONS=TEST_CHAR_TRAIN_OPTIONS)
 
     print('### TEST RUN: TRAINING CHAR LM ###')
-    train(**char_lm_config)
+   # train(**char_lm_config)  # train the character model
 
     word_lm_config = dict(
-        PATH2CORPUS='../data/is/word_test_corpus',
+        PATH2CORPUS='./wplmdata-preprocessed/is/word_corpus',
         LANG='is',
         VOCABFILE='flair_vocab_cutoff5.pkl',
-        PATHOUT='/tmp/test_word_lm',
+        PATHOUT='./models.d/word_lm',
         IS_CHAR_DATASET=False,
-        LM_OPTIONS=TEST_WORD_LM_OPTIONS,
-        TRAIN_OPTIONS=TEST_WORD_TRAIN_OPTIONS)
+        LM_OPTIONS=WORD_LM_OPTIONS,
+        TRAIN_OPTIONS=WORD_TRAIN_OPTIONS)
 
     print('### TEST RUN: TRAINING WORD LM ###')
     train(**word_lm_config)
