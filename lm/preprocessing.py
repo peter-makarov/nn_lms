@@ -10,6 +10,8 @@ from collections import Counter
 
 from typing import Union, Dict, List
 
+from sacred import Experiment
+
 ENCODING = 'utf8'
 UNK = b'<unk>'
 UNK_CODE = 0
@@ -19,8 +21,9 @@ EOS_CODE = 1
 
 DIGITRE = re.compile(r"^[\d.,'`-]+$")  # pattern for numbers
 
-
-def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str], PATH2LABELED: Union[Path, str],
+ex = Experiment()
+@ex.automain
+def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str], PATH2LABELED: Union[Path, str], OUTPUTDIR: Union[Path,str],
                     TRAIN: float = 0.8, RANDOM_SEED: int = 1, UNK_CUTOFF: int = 5, TESTING: bool = False) -> None:
     """
     Splits a dataset into train and dev, arrange data in the format expected by flair:
@@ -37,6 +40,7 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
     :param LANG: Language code (used to find the dataset files).
     :param PATH2DATA: Path to dataset data.
     :param PATH2LABELED: Path to some labeled type-level dataset to estimate coverage after UNK-ing (only for word LM).
+    :param OUTPUTDIR: Path to output directory.
     :param TRAIN: About 100 * `TRAIN`% randomly drawn sentences will be train, the rest is dev.
     :param RANDOM_SEED: Random seed for sampling train sentences.
     :param UNK_CUTOFF: Upper limit on range: Every type with this or lower frequency will be dropped.
@@ -49,13 +53,13 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
 
     PATH2DATA = Path(PATH2DATA)
     PATH2LABELED = Path(PATH2LABELED)
-
+    OUTPUTDIR = Path(OUTPUTDIR)
     # source dir
-    SRC_DIR = PATH2DATA / LANG
+    SRC_DIR = PATH2DATA / LANG / "normalized"
     print('Will read in any *txt files from this directory:', SRC_DIR)
 
     # output dir
-    CORPUS = PATH2DATA / LANG / ('%s%s_corpus' % ('char' if IS_CHAR_DATASET else 'word', '_test' if TESTING else ''))
+    CORPUS = OUTPUTDIR / LANG / ('%s%s_corpus' % ('char' if IS_CHAR_DATASET else 'word', '_test' if TESTING else ''))
     TRAINDIR = CORPUS / 'train'
     DEV = CORPUS / 'valid.txt'
     TEST = CORPUS / 'test.txt'
@@ -165,4 +169,4 @@ if __name__ == "__main__":
         UNK_CUTOFF= 5,         # UPPER LIMIT ON RANGE: everything with this or lower freq is dropped
         TESTING=True)
 
-    prepare_dataset(**corpus_prep_config)
+#    prepare_dataset(**corpus_prep_config)
