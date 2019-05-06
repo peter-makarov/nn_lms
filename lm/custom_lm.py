@@ -78,8 +78,10 @@ class CustomLanguageModel(LanguageModel, LM):
 
             # initial hidden state and input
             hidden = self.init_hidden(1)
-            input = torch.tensor(self.dictionary.get_idx_for_item(self.eos)).unsqueeze(0).unsqueeze(0)
 
+            input = torch.tensor(self.dictionary.get_idx_for_item(self.eos)).unsqueeze(0).unsqueeze(0)
+            if torch.cuda.is_available():
+                 input = input.cuda()
             prediction, _, hidden = self.forward(input, hidden)
 
             log_prob = 0.
