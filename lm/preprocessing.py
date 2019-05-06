@@ -1,5 +1,4 @@
 import os
-import glob
 import json
 import pickle
 import random
@@ -8,9 +7,9 @@ import re
 from pathlib import Path
 from collections import Counter
 
-from typing import Union, Dict, List
+from typing import Union, List, Optional
 
-from sacred import Experiment
+import sacred
 
 ENCODING = 'utf8'
 UNK = b'<unk>'
@@ -21,10 +20,13 @@ EOS_CODE = 1
 
 DIGITRE = re.compile(r"^[\d.,'`-]+$")  # pattern for numbers
 
-ex = Experiment()
-@ex.automain
-def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str], PATH2LABELED: Union[Path, str], OUTPUTDIR: Union[Path,str],
-                    TRAIN: float = 0.8, RANDOM_SEED: int = 1, UNK_CUTOFF: int = 5, TESTING: bool = False) -> None:
+EX = sacred.Experiment()
+
+@EX.automain
+def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str],  OUTPUTDIR: Union[Path, str],
+                    PATH2LABELED: Optional[Union[Path, str]], SUFFIX: Optional[str] = "normalized",
+                    TRAIN: float = 0.8, RANDOM_SEED: int = 1, UNK_CUTOFF: int = 5,
+                    TESTING: bool = False) -> None:
     """
     Splits a dataset into train and dev, arrange data in the format expected by flair:
 
@@ -39,6 +41,7 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
     :param IS_CHAR_DATASET: Is this a dataset for a character LM? Else, for a word LM.
     :param LANG: Language code (used to find the dataset files).
     :param PATH2DATA: Path to dataset data.
+    :param SUFFIX: Suffix of the path to the data text files, i.e. PATH2DATA / LANG / SUFFIX
     :param PATH2LABELED: Path to some labeled type-level dataset to estimate coverage after UNK-ing (only for word LM).
     :param OUTPUTDIR: Path to output directory.
     :param TRAIN: About 100 * `TRAIN`% randomly drawn sentences will be train, the rest is dev.
@@ -52,10 +55,16 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
     print('Language: %s, types are: %s' % (LANG, 'characters' if IS_CHAR_DATASET else 'words'))
 
     PATH2DATA = Path(PATH2DATA)
-    PATH2LABELED = Path(PATH2LABELED)
     OUTPUTDIR = Path(OUTPUTDIR)
+
+    if PATH2LABELED is not None:
+        PATH2LABELED = Path(PATH2LABELED)
+
     # source dir
-    SRC_DIR = PATH2DATA / LANG / "normalized"
+    if SUFFIX is not None:
+        SRC_DIR = PATH2DATA / LANG / SUFFIX
+    else:
+        SRC_DIR = PATH2DATA / LANG
     print('Will read in any *txt files from this directory:', SRC_DIR)
 
     # output dir
@@ -106,7 +115,7 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
     with open(CORPUS / 'vocab.json', mode='w', encoding=ENCODING) as w:
         json.dump(dict(dictionary), w, indent=4)
 
-    if not IS_CHAR_DATASET:
+    if PATH2LABELED and not IS_CHAR_DATASET:
         coverage: List[int] = []  # list of freq counts of all modern types from some reference labeled dataset
         with open(PATH2LABELED, encoding=ENCODING) as f:
             for line in f:  # roughly...
@@ -135,7 +144,7 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
                     items.append(k.encode(ENCODING))
                 else:
                     unk_freq += v
-            if not IS_CHAR_DATASET:
+            if counts_coverage:
                 D_coverage = sum(count > D for count in counts_coverage) / len(counts_coverage)
                 print('Flair vocabulary of types (UNK <= %d) has %d types. Coverage: %.3f' %
                       (D, len(items), D_coverage))
@@ -154,19 +163,3 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
     print('Validation and test datasets are the same.')
     shutil.copy(DEV, TEST)
     print('Done.')
-
-
-if __name__ == "__main__":
-
-    corpus_prep_config = dict(
-        IS_CHAR_DATASET=False,  # is a character LM dataset?
-        LANG='is',             # language code (used to find the dataset files)
-        PATH2DATA="../data/",  # path to data
-        TRAIN= 0.8,            # about 100 * X% randomly drawn sentences will be train, the rest is dev
-        RANDOM_SEED=1,         # random seed for sampling train sentences
-        PATH2LABELED= "/home/peter/nlp/projects/histnorm_corpora/histnorm/" \
-                      "datasets/historical/icelandic/icelandic-icepahc.dev.txt",  # to estimate coverage after UNK-ing
-        UNK_CUTOFF= 5,         # UPPER LIMIT ON RANGE: everything with this or lower freq is dropped
-        TESTING=True)
-
-#    prepare_dataset(**corpus_prep_config)
