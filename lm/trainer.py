@@ -2,24 +2,22 @@ from pathlib import Path
 
 from typing import Union, Dict
 
-from sacred import Experiment
+import sacred
 
 from flair.data import Dictionary
-from flair.models import LanguageModel
 from flair.trainers.language_model_trainer import LanguageModelTrainer
 
 from lm.custom_lm import WordLanguageModel, CharLanguageModel, CustomTextCorpus
 from lm.preprocessing import ENCODING, EOS_NEWLINE
-from lm.configs import TEST_CHAR_LM_OPTIONS, TEST_CHAR_TRAIN_OPTIONS, TEST_WORD_LM_OPTIONS, TEST_WORD_TRAIN_OPTIONS, WORD_LM_OPTIONS, WORD_TRAIN_OPTIONS
-
-
+from lm.configs import WORD_LM_OPTIONS, WORD_TRAIN_OPTIONS, CHAR_LM_OPTIONS, CHAR_TRAIN_OPTIONS
 
 IS_FORWARD_LM = True  # we only do forward LMs.
 
-ex = Experiment()
-@ex.automain
+EX = sacred.Experiment()
+
+@EX.automain
 def train(PATH2CORPUS: Union[Path, str], LANG: str, VOCABFILE: str, PATHOUT: Union[Path, str],
-          IS_CHAR_DATASET: bool, LM_OPTIONS: Dict, TRAIN_OPTIONS: Dict) -> None:
+          IS_CHAR_DATASET: bool, LM_OPTIONS: Dict, TRAIN_OPTIONS: Dict, TESTING: bool=False) -> None:
     """
     Wrapper for training flair-compatible character and word language models (LMs).
     :param PATH2CORPUS: Path to corpus.
@@ -29,10 +27,20 @@ def train(PATH2CORPUS: Union[Path, str], LANG: str, VOCABFILE: str, PATHOUT: Uni
     :param IS_CHAR_DATASET: Is this a character LM dataset? Else, a word LM dataset.
     :param LM_OPTIONS: LM options (aka model hyper-parameters).
     :param TRAIN_OPTIONS: Training options.
+    :param TESTING: Whether this is a test run.
     """
 
     print('Training {0} language model for language: ** {1} **'.format(
         'character' if IS_CHAR_DATASET else 'word', LANG))
+
+    if not TESTING:
+        # check that LM and TRAIN options are standard!
+        if IS_CHAR_DATASET:
+            assert LM_OPTIONS == CHAR_LM_OPTIONS, ('Non-standard LM options! %s' % LM_OPTIONS)
+            assert TRAIN_OPTIONS == CHAR_TRAIN_OPTIONS, ('Non-standard TRAIN options! %s' % TRAIN_OPTIONS)
+        else:
+            assert LM_OPTIONS == WORD_LM_OPTIONS, ('Non-standard LM options! %s' % LM_OPTIONS)
+            assert TRAIN_OPTIONS == WORD_TRAIN_OPTIONS, ('Non-standard TRAIN options! %s' % TRAIN_OPTIONS)
 
     # paths
     PATH2CORPUS = Path(PATH2CORPUS)
@@ -96,30 +104,3 @@ def train(PATH2CORPUS: Union[Path, str], LANG: str, VOCABFILE: str, PATHOUT: Uni
         print(f'{k: <40} : {v}')
 
     trainer.train(PATHOUT, **TRAIN_OPTIONS)
-
-
-if __name__ == "__main__":
-
-    char_lm_config = dict(
-        PATH2CORPUS='./wplmdata-preprocessed/is/char_test_corpus',
-        LANG='is',
-        VOCABFILE='flair_vocab_cutoff5.pkl',
-        PATHOUT='./models.d/test_char_lm',
-        IS_CHAR_DATASET=True,
-        LM_OPTIONS=TEST_CHAR_LM_OPTIONS,
-        TRAIN_OPTIONS=TEST_CHAR_TRAIN_OPTIONS)
-
-    print('### TEST RUN: TRAINING CHAR LM ###')
-   # train(**char_lm_config)  # train the character model
-
-    word_lm_config = dict(
-        PATH2CORPUS='./wplmdata-preprocessed/is/word_corpus',
-        LANG='is',
-        VOCABFILE='flair_vocab_cutoff5.pkl',
-        PATHOUT='./models.d/word_lm',
-        IS_CHAR_DATASET=False,
-        LM_OPTIONS=WORD_LM_OPTIONS,
-        TRAIN_OPTIONS=WORD_TRAIN_OPTIONS)
-
-    print('### TEST RUN: TRAINING WORD LM ###')
-    train(**word_lm_config)

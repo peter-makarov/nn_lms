@@ -79,17 +79,13 @@ class CustomLanguageModel(LanguageModel, LM):
             # initial hidden state and input
             hidden = self.init_hidden(1)
 
-            input = torch.tensor(self.dictionary.get_idx_for_item(self.eos)).unsqueeze(0).unsqueeze(0)
-            if torch.cuda.is_available():
-                 input = input.cuda()
-            prediction, _, hidden = self.forward(input, hidden)
+            input = torch.tensor([[self.dictionary.get_idx_for_item(self.eos)]])
 
             log_prob = 0.
 
             for i in range(number_of_characters):
 
-                if torch.cuda.is_available():
-                    input = input.cuda()
+                input = input.to(flair.device)
 
                 # get predicted weights
                 prediction, _, hidden = self.forward(input, hidden)
@@ -171,10 +167,7 @@ class CustomLanguageModel(LanguageModel, LM):
         with torch.no_grad():
             # @TODO Is newline BOS symbol?
             input_char_idx = self.dictionary.get_idx_for_item('\n')
-            input_tensor = torch.tensor([[input_char_idx]])
-
-            if torch.cuda.is_available():
-                input_tensor = input_tensor.cuda()
+            input_tensor = torch.tensor([[input_char_idx]]).to(flair.device)
 
             prediction, _, hidden = self.forward(input_tensor, self.init_hidden(1))
             prediction = prediction.squeeze().detach()
@@ -204,10 +197,7 @@ class CustomLanguageModel(LanguageModel, LM):
 
                 log_prob += prob
 
-                input_tensor = torch.tensor([[target_char_idx]])
-
-                if torch.cuda.is_available():
-                    input_tensor = input_tensor.cuda()
+                input_tensor = torch.tensor([[target_char_idx]]).to(flair.device)
 
                 # get predicted weights
                 prediction, _, hidden = self.forward(input_tensor, hidden)
