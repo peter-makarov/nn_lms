@@ -61,7 +61,7 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
     # output dir
     CORPUS = OUTPUTDIR / LANG / ('%s%s_corpus' % ('char' if IS_CHAR_DATASET else 'word', '_test' if TESTING else ''))
     if not TESTING:
-        assert not os.path.exists(CORPUS), "Corpus output directory exists {CORPUS}".format(CORPUS=CORPUS)
+        assert not os.path.exists(CORPUS), "Corpus output directory exists: {}".format(CORPUS)
     TRAINDIR = CORPUS / 'train'
     DEV = CORPUS / 'valid.txt'
     TEST = CORPUS / 'test.txt'

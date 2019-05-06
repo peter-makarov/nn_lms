@@ -63,7 +63,7 @@ def train(PATH2CORPUS: Union[Path, str], LANG: str, VOCABFILE: str, PATHOUT: Uni
     elif len_dictionary < 30000:
         print('*** NB *** Really a WORD LM vocabulary? Size < 30,000 {}'.format(len_dictionary))
     # check EOS ...
-    with open(PATH2CORPUS / 'train/train_split_0.txt', encoding=ENCODING) as f:
+    with open(PATH2CORPUS / 'valid.txt', encoding=ENCODING) as f:
         for l in f:
             if IS_CHAR_DATASET:
                 if not l.endswith(EOS_NEWLINE):
