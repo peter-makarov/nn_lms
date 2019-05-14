@@ -127,7 +127,7 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
     total_train_token_count = sum(dictionary.values())
     highest_count = dictionary.most_common(1)[0][1]
 
-    for D in range(1, UNK_CUTOFF + 1):
+    for D in range(1, UNK_CUTOFF + 1, (5 if IS_CHAR_DATASET else 1)):
         # create flair-compatible pickle dictionary maps
         with open(CORPUS / ('flair_vocab_cutoff%d.pkl' % D), mode='wb') as w:
             unk_freq = 0
