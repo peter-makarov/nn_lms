@@ -143,6 +143,8 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
                       (D, len(items), D_coverage))
             else:
                 D_coverage = None
+                print('Flair vocabulary of types (UNK <= %d) has %d types.' %  (D, len(items)))
+
             print('UNK has a train set frequency of %d (max: %d) and a relative frequency of %.5f\n' %
                   (unk_freq, highest_count, unk_freq / total_train_token_count))
             mappings = dict()
