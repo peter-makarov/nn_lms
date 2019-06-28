@@ -1,5 +1,5 @@
-from lm.configs import TEST_CHAR_LM_OPTIONS, TEST_CHAR_TRAIN_OPTIONS, TEST_WORD_LM_OPTIONS, TEST_WORD_TRAIN_OPTIONS
-from lm.trainer import train
+from nn_lm.configs import TEST_CHAR_LM_OPTIONS, TEST_CHAR_TRAIN_OPTIONS, TEST_WORD_LM_OPTIONS, TEST_WORD_TRAIN_OPTIONS
+from nn_lm.trainer import train
 
 
 char_lm_config = dict(

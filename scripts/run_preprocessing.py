@@ -1,4 +1,4 @@
-from lm.preprocessing import prepare_dataset
+from nn_lm.preprocessing import prepare_dataset
 
 corpus_prep_config = dict(
     IS_CHAR_DATASET=False,     # is a character LM dataset?
