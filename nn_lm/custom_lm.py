@@ -254,3 +254,14 @@ class CustomTextCorpus(TextCorpus):
                          random_case_flip=False,
                          character_level=False,
                          shuffle_lines=True)
+
+
+class CustomCharCorpus(TextCorpus):
+
+    def __init__(self, path2corpus: Union[Path,str], dictionary):
+
+        super().__init__(path2corpus, dictionary,
+                         forward=True,
+                         random_case_flip=False,
+                         character_level=True,
+                         shuffle_lines=True)

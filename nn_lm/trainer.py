@@ -7,7 +7,7 @@ import sacred
 from flair.data import Dictionary
 from flair.trainers.language_model_trainer import LanguageModelTrainer
 
-from nn_lm.custom_lm import WordLanguageModel, CharLanguageModel, CustomTextCorpus
+from nn_lm.custom_lm import WordLanguageModel, CharLanguageModel, CustomTextCorpus,CustomCharCorpus
 from nn_lm.preprocessing import ENCODING, EOS_NEWLINE
 from nn_lm.configs import WORD_LM_OPTIONS, WORD_TRAIN_OPTIONS, CHAR_LM_OPTIONS, CHAR_TRAIN_OPTIONS
 
@@ -82,12 +82,16 @@ def train(PATH2CORPUS: Union[Path, str], LANG: str, VOCABFILE: str, PATHOUT: Uni
                 break
             else:
                 AssertionError('Wrong EOS for word LM! %s' % l)
-
-    # corpus
-    corpus: CustomTextCorpus = CustomTextCorpus(PATH2CORPUS, dictionary)
-
-    # language model
-    LM = CharLanguageModel if IS_CHAR_DATASET else WordLanguageModel
+    if IS_CHAR_DATASET:
+        # corpus
+        corpus: CustomCharCorpus = CustomCharCorpus(PATH2CORPUS, dictionary)
+        # language model
+        LM = CharLanguageModel
+    else:
+        # corpus
+        corpus: CustomTextCorpus = CustomTextCorpus(PATH2CORPUS, dictionary)
+        # language model
+        LM = WordLanguageModel
 
     print('Using the following options with {} language model: '.format(LM))
     for k, v in LM_OPTIONS.items():

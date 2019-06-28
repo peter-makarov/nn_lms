@@ -128,7 +128,7 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
     total_train_token_count = sum(dictionary.values())
     highest_count = dictionary.most_common(1)[0][1]
 
-    for D in range(1, UNK_CUTOFF + 1):
+    for D in range(1, UNK_CUTOFF + 1, (5 if IS_CHAR_DATASET else 1)):
         # create flair-compatible pickle dictionary maps
         with open(CORPUS / ('flair_vocab_cutoff%d.pkl' % D), mode='wb') as w:
             unk_freq = 0
@@ -144,6 +144,8 @@ def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str
                       (D, len(items), D_coverage))
             else:
                 D_coverage = None
+                print('Flair vocabulary of types (UNK <= %d) has %d types.' % (D, len(items)))
+
             print('UNK has a train set frequency of %d (max: %d) and a relative frequency of %.5f\n' %
                   (unk_freq, highest_count, unk_freq / total_train_token_count))
             mappings = dict()
@@ -169,7 +171,7 @@ if __name__ == "__main__":
         RANDOM_SEED=1,         # random seed for sampling train sentences
         PATH2LABELED= "/home/peter/nlp/projects/histnorm_corpora/histnorm/" \
                       "datasets/historical/icelandic/icelandic-icepahc.dev.txt",  # to estimate coverage after UNK-ing
-        UNK_CUTOFF= 5,         # UPPER LIMIT ON RANGE: everything with this or lower freq is dropped
+        UNK_CUTOFF=5,          # UPPER LIMIT ON RANGE: everything with this or lower freq is dropped
         TESTING=True)
 
 #    prepare_dataset(**corpus_prep_config)
