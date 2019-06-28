@@ -7,6 +7,6 @@ setup(name='nn_lm',
       author='Peter Makarov & Simon Clematide',
       author_email='makarov@cl.uzh.ch',
       license='MIT',
-      packages=['lm'],
+      packages=['nn_lm'],
       zip_safe=False)
 

@@ -7,9 +7,9 @@ import sacred
 from flair.data import Dictionary
 from flair.trainers.language_model_trainer import LanguageModelTrainer
 
-from lm.custom_lm import WordLanguageModel, CharLanguageModel, CustomTextCorpus
-from lm.preprocessing import ENCODING, EOS_NEWLINE
-from lm.configs import WORD_LM_OPTIONS, WORD_TRAIN_OPTIONS, CHAR_LM_OPTIONS, CHAR_TRAIN_OPTIONS
+from nn_lm.custom_lm import WordLanguageModel, CharLanguageModel, CustomTextCorpus
+from nn_lm.preprocessing import ENCODING, EOS_NEWLINE
+from nn_lm.configs import WORD_LM_OPTIONS, WORD_TRAIN_OPTIONS, CHAR_LM_OPTIONS, CHAR_TRAIN_OPTIONS
 
 IS_FORWARD_LM = True  # we only do forward LMs.
 

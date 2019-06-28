@@ -23,8 +23,9 @@ DIGITRE = re.compile(r"^[\d.,'`-]+$")  # pattern for numbers
 
 ex = Experiment()
 @ex.automain
-def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str], PATH2LABELED: Union[Path, str], OUTPUTDIR: Union[Path,str],
-                    TRAIN: float = 0.8, RANDOM_SEED: int = 1, UNK_CUTOFF: int = 5, TESTING: bool = False) -> None:
+def prepare_dataset(IS_CHAR_DATASET: bool, LANG: str, PATH2DATA: Union[Path, str], PATH2LABELED: Union[Path, str],
+                    OUTPUTDIR: Union[Path,str], TRAIN: float = 0.8, RANDOM_SEED: int = 1, UNK_CUTOFF: int = 5,
+                    TESTING: bool = False) -> None:
     """
     Splits a dataset into train and dev, arrange data in the format expected by flair:
 

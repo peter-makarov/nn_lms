@@ -65,11 +65,11 @@ class CustomLanguageModel(LanguageModel, LM):
         super().__init__(*args, **kwargs)
 
 
-    def generate_text(self, prefix: Optional[str] = None, number_of_characters: int = 1000, temperature: float = 1.0,
-                      break_on_suffix=None) -> Tuple[str, float]:
+    def generate_text(self, prefix: Optional[Sequence] = None, number_of_characters: int = 1000,
+                      temperature: float = 1.0, break_on_suffix=None) -> Tuple[str, float]:
 
         if prefix is not None:
-            print('Prefix is ignored. Using "{}" as prefix.' % self.EOS)
+            print(f'Prefix is ignored. Using "{self.eos}" as prefix.')
 
         with torch.no_grad():
             characters = []
@@ -161,12 +161,12 @@ class CustomLanguageModel(LanguageModel, LM):
 
     def initial_state(self):
         """
-        Pass the BOS symbol.
+        Consume eos symbol.
         :return:
         """
         with torch.no_grad():
-            # @TODO Is newline BOS symbol?
-            input_char_idx = self.dictionary.get_idx_for_item('\n')
+
+            input_char_idx = self.dictionary.get_idx_for_item(self.eos)
             input_tensor = torch.tensor([[input_char_idx]]).to(flair.device)
 
             prediction, _, hidden = self.forward(input_tensor, self.init_hidden(1))
@@ -174,17 +174,22 @@ class CustomLanguageModel(LanguageModel, LM):
 
             return prediction, hidden
 
-    def score(self, word: str, prefix: Sequence[str], state,
+    def score(self, word: Sequence, prefix: Optional[Sequence] = None, state: Optional = None,
               normalized: bool = True, length_normalized: bool = False) -> Tuple[Any, float]:
         # @TODO move normalized to self.__init__()
 
+        if prefix:
+            print(f'Prefix is ignored. Using "{self.eos}" as prefix.')
+
+        if state is None:
+            state = self.initial_state()
         prediction, hidden = state
 
         log_prob = 0.
 
         with torch.no_grad():
 
-            for character in word + ' ':
+            for character in word:
 
                 target_char_idx = self.dictionary.get_idx_for_item(character)
 
