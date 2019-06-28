@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Tuple, Any, Union
+from typing import Optional, Sequence, Tuple, Any, Union, List
 from pathlib import Path
 
 import abc
@@ -7,14 +7,19 @@ import abc
 import flair
 import torch
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from flair.models.language_model import LanguageModel
 
 from flair.trainers.language_model_trainer import TextCorpus
+
+import numpy as np
 
 CHAR_EOS = '\n'
 WORD_EOS = '<eos>'
 CHAR_DELIMITER = ''
 WORD_DELIMITER = ' '
+UNK = '<unk>'
+UNK_CODE = 0
 
 
 class LM(abc.ABC):
@@ -63,7 +68,6 @@ class CustomLanguageModel(LanguageModel, LM):
         self.vocab_check = None
 
         super().__init__(*args, **kwargs)
-
 
     def generate_text(self, prefix: Optional[Sequence] = None, number_of_characters: int = 1000,
                       temperature: float = 1.0, break_on_suffix=None) -> Tuple[str, float]:
@@ -131,7 +135,6 @@ class CustomLanguageModel(LanguageModel, LM):
 
             return text, log_prob
 
-
     @classmethod
     def load_language_model(cls, model: str, vocab_check=None):
         """
@@ -165,7 +168,6 @@ class CustomLanguageModel(LanguageModel, LM):
         :return:
         """
         with torch.no_grad():
-
             input_char_idx = self.dictionary.get_idx_for_item(self.eos)
             input_tensor = torch.tensor([[input_char_idx]]).to(flair.device)
 
@@ -179,17 +181,19 @@ class CustomLanguageModel(LanguageModel, LM):
         # @TODO move normalized to self.__init__()
 
         if prefix:
-            print(f'Prefix is ignored. Using "{self.eos}" as prefix.')
-
-        if state is None:
-            state = self.initial_state()
-        prediction, hidden = state
+            print(f'Prefix is ignored. Using "{self.eos}" as suffix.')
 
         log_prob = 0.
 
         with torch.no_grad():
 
-            for character in word:
+            if state is None:
+                # print(f'Using "{self.eos}" as prefix.')
+                state = self.initial_state()
+
+            prediction, hidden = state
+
+            for character in list(word) + [self.eos]:
 
                 target_char_idx = self.dictionary.get_idx_for_item(character)
 
@@ -214,6 +218,75 @@ class CustomLanguageModel(LanguageModel, LM):
 
             return (prediction, hidden), out
 
+    def score_batch(self, words: List[Sequence], normalized: bool = True, length_normalized: bool = False):
+
+        words = [list(w) for w in words]
+        seq_lengths = [len(w) for w in words]
+        assert sorted(seq_lengths, reverse=True) == seq_lengths, ('Batch not sorted!')
+        seq_lengths = np.array(seq_lengths)
+        longest_character_sequence_in_batch: int = seq_lengths[0]
+
+        with torch.no_grad():
+
+            # pad sequences with UNK to longest sentence
+            sequences: List[List[int]] = []
+            for seq_len, word in zip(seq_lengths, words):
+                pad_by = longest_character_sequence_in_batch - seq_len
+                padded = [self.eos] + word + [self.eos] + [UNK] * pad_by
+                integerized = [self.dictionary.get_idx_for_item(char) for char in padded]
+                sequences.append(integerized)
+
+            hidden = self.init_hidden(len(sequences))
+
+            batch = torch.LongTensor(sequences).to(flair.device)
+
+            # (batch_size X  max_seq_len X input_size )
+            encoded = self.encoder(batch)
+            emb = self.drop(encoded)  # no-op
+
+            self.rnn.flatten_parameters()  # no-op ?
+
+            # (batch_size X max_seq_len X embedding_dim)
+            packed_input = pack_padded_sequence(emb, seq_lengths + 2, batch_first=True)
+
+            output, hidden = self.rnn(packed_input, hidden)
+
+            # ( batch_size X max_seq_len X hidden_dim )
+            unpacked_output, _ = pad_packed_sequence(output, padding_value=0.0, batch_first=True)
+
+            batch_size, max_seq_len, hidden_dim = unpacked_output.shape
+
+            if self.proj is not None:
+                unpacked_output = self.proj(unpacked_output)
+
+            unpacked_output = self.drop(unpacked_output)  # no-op
+
+            assert batch_size == len(sequences), (unpacked_output.shape, len(sequences))
+            assert max_seq_len == seq_lengths[0] + 2, (unpacked_output.shape, seq_lengths[0] + 2)
+
+            # ( batch_size X max_seq_len X number of classes )
+            predictions = self.decoder(unpacked_output).detach()
+
+            if normalized:
+                predictions = F.log_softmax(predictions, dim=-1).numpy()
+            else:
+                predictions = predictions.exp().numpy()
+
+            eos_code = self.dictionary.get_idx_for_item(self.eos)
+            log_probs = np.zeros(batch_size)
+
+            # a   eos #
+            # eos a   # eos unk
+            for i in range(batch_size):
+                seq_length = seq_lengths[i]
+                log_probs[i] = predictions[i][np.arange(seq_length + 1), sequences[i][1:seq_length + 2]].sum()
+                assert sequences[i][seq_length + 1] == eos_code, (sequences[i][seq_length + 1], sequences[i])
+
+            if length_normalized:
+                log_probs /= (np.array(seq_lengths) + 1)
+
+            return log_probs
+
     def __contains__(self, word: str):
         # can it give any non-UNK score to word?
         if self.vocab_check:
@@ -229,7 +302,6 @@ def figure_out_path2model(path: str) -> str:
 class WordLanguageModel(CustomLanguageModel):
 
     def __init__(self, *args, **kwargs):
-
         super().__init__(*args, **kwargs)
 
         self.delimiter = WORD_DELIMITER
@@ -247,8 +319,7 @@ class CharLanguageModel(CustomLanguageModel):
 
 class CustomTextCorpus(TextCorpus):
 
-    def __init__(self, path2corpus: Union[Path,str], dictionary):
-
+    def __init__(self, path2corpus: Union[Path, str], dictionary):
         super().__init__(path2corpus, dictionary,
                          forward=True,
                          random_case_flip=False,
@@ -258,8 +329,7 @@ class CustomTextCorpus(TextCorpus):
 
 class CustomCharCorpus(TextCorpus):
 
-    def __init__(self, path2corpus: Union[Path,str], dictionary):
-
+    def __init__(self, path2corpus: Union[Path, str], dictionary):
         super().__init__(path2corpus, dictionary,
                          forward=True,
                          random_case_flip=False,
