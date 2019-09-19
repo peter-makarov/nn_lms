@@ -180,7 +180,7 @@ class CustomLanguageModel(LanguageModel, LM):
             return prediction, hidden
 
     def score(self, word: str, prefix: Optional[Sequence[str]] = None, state: Optional = None,
-              normalized: bool = True, length_normalized: bool = False) -> Tuple[Any, float]:
+              normalized: bool = True, length_normalized: bool = False, unk_score: float = None) -> Tuple[Any, float]:
         """
         Score the input word given the state.
         :param word: An atomic word or a sequence of characters.
@@ -188,6 +188,8 @@ class CustomLanguageModel(LanguageModel, LM):
         :param state: Any start state. If None, using initial state, which is equivalent to `self.eos`.
         :param normalized: Whether to use normalized softmax probabilities.
         :param length_normalized: Whether to normalize the final log probability score by sequence length.
+        :param unk_score: If not None, will use this ln score for <unk>. This could be beneficial as, if <unk> had a
+            high relative frequency in the training data, it will get unreasonably high scores by the model.
         :return: State and log score.
         """
         # word is a str => for a char model seq of observations; for a word model one observation
@@ -215,7 +217,10 @@ class CustomLanguageModel(LanguageModel, LM):
 
                 prob = word_weights[target_char_idx]
 
-                log_prob += prob
+                if target_char_idx == UNK_CODE and unk_score is not None:
+                    log_prob += torch.tensor(unk_score)
+                else:
+                    log_prob += prob
 
                 input_tensor = torch.tensor([[target_char_idx]]).to(flair.device)
 
@@ -230,7 +235,7 @@ class CustomLanguageModel(LanguageModel, LM):
             return (prediction, hidden), out
 
     def score_sample(self, sequence: Sequence, normalized: bool = True, length_normalized: bool = False,
-                     state: Optional = None) -> float:
+                     unk_score: float = None, state: Optional = None) -> float:
         """
         Score a full sequence (of words [w_1, ..., w_n] or characters "c_1...c_n") using `self.eos` as final
         observation.
@@ -238,6 +243,8 @@ class CustomLanguageModel(LanguageModel, LM):
         :param normalized: Whether to use normalized softmax probabilities.
         :param length_normalized: Whether to normalize the final log probability score by sequence length.
         :param state: Any start state. If None, using initial state, which is equivalent to `self.eos`.
+        :param unk_score: If not None, will use this ln score for <unk>. This could be beneficial as, if <unk> had a
+            high relative frequency in the training data, it will get unreasonably high scores by the model.
         :return: Log score.
         """
         log_prob = 0.
@@ -261,7 +268,10 @@ class CustomLanguageModel(LanguageModel, LM):
 
                 prob = word_weights[target_char_idx]
 
-                log_prob += prob
+                if target_char_idx == UNK_CODE and unk_score is not None:
+                    log_prob += torch.tensor(unk_score)
+                else:
+                    log_prob += prob
 
                 input_tensor = torch.tensor([[target_char_idx]]).to(flair.device)
 
@@ -275,14 +285,16 @@ class CustomLanguageModel(LanguageModel, LM):
 
             return out
 
-    def score_batch(self, words: List[Sequence], normalized: bool = True, length_normalized: bool = False) -> \
-            np.ndarray:
+    def score_batch(self, words: List[Sequence], normalized: bool = True, length_normalized: bool = False,
+                    unk_score: float = None) -> np.ndarray:
         """
         Score a batch of sequences (of words [w_1, ..., w_n] or of characters "c_1...c_m"). Use `self.eos` as initial
         and final observations.
         :param words: Sequences of words or characters.
         :param normalized: Whether to use normalized softmax probabilities.
         :param length_normalized: Whether to normalize the final log probabilities score by sequence lengths.
+        :param unk_score: If not None, will use this ln score for <unk>. This could be beneficial as, if <unk> had a
+            high relative frequency in the training data, it will get unreasonably high scores by the model.
         :return: Log scores for `words`.
         """
         words = [list(w) for w in words]
@@ -290,18 +302,18 @@ class CustomLanguageModel(LanguageModel, LM):
         assert sorted(seq_lengths, reverse=True) == seq_lengths, 'Batch not sorted!'
         seq_lengths = np.array(seq_lengths)
         longest_character_sequence_in_batch: int = seq_lengths[0]
+        len_seqs: int = len(words)
 
         with torch.no_grad():
 
             # pad sequences with UNK to longest sentence
-            sequences: List[List[int]] = []
-            for seq_len, word in zip(seq_lengths, words):
-                pad_by = longest_character_sequence_in_batch - seq_len
-                padded = [self.eos] + word + [self.eos] + [UNK] * pad_by
+            sequences = np.full((len_seqs, longest_character_sequence_in_batch + 2), fill_value=UNK_CODE)
+            for i, (seq_len, word) in enumerate(zip(seq_lengths, words)):
+                padded = [self.eos] + word + [self.eos]
                 integerized = [self.dictionary.get_idx_for_item(char) for char in padded]
-                sequences.append(integerized)
+                sequences[i, :(seq_len + 2)] = integerized
 
-            hidden = self.init_hidden(len(sequences))
+            hidden = self.init_hidden(len_seqs)
 
             batch = torch.LongTensor(sequences).to(flair.device)
 
@@ -326,7 +338,7 @@ class CustomLanguageModel(LanguageModel, LM):
 
             unpacked_output = self.drop(unpacked_output)  # no-op
 
-            assert batch_size == len(sequences), (unpacked_output.shape, len(sequences))
+            assert batch_size == len_seqs, (unpacked_output.shape, len_seqs)
             assert max_seq_len == seq_lengths[0] + 2, (unpacked_output.shape, seq_lengths[0] + 2)
 
             # ( batch_size X max_seq_len X number of classes )
@@ -344,7 +356,15 @@ class CustomLanguageModel(LanguageModel, LM):
             # eos a   # eos unk
             for i in range(batch_size):
                 seq_length = seq_lengths[i]
-                log_probs[i] = predictions[i][np.arange(seq_length + 1), sequences[i][1:seq_length + 2]].sum()
+                # for each input starting with eos, collect score of its next input
+                log_prob = predictions[i][np.arange(seq_length + 1), sequences[i][1:seq_length + 2]]
+                if unk_score is None:
+                    log_probs[i] = log_prob.sum()
+                else:
+                    # define a Boolean mask that masks away all UNKs inside this sequence
+                    unk_mask = sequences[i, 1:(seq_length + 2)].astype(np.bool_)
+                    # sum masked log scores + (number of UNKs X unk_score)
+                    log_probs[i] = log_prob[unk_mask].sum() + (~unk_mask * unk_score).sum()
                 assert sequences[i][seq_length + 1] == eos_code, (sequences[i][seq_length + 1], sequences[i])
 
             if length_normalized:
