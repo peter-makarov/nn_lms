@@ -42,7 +42,7 @@ class LM(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def score(self, word: str, prefix: Sequence[str], state: Any) -> Tuple[Any, float]:
+    def score(self, word: str, prefix: Optional[Sequence[str]], state: Any) -> Tuple[Any, float]:
         """
         Given a word and some representation of the previous context, `state`, score the full sequence.
         :param word: Continuation of the sequence.
@@ -68,6 +68,9 @@ class CustomLanguageModel(LanguageModel, LM):
         self.vocab_check = None
 
         super().__init__(*args, **kwargs)
+
+    def _prepare_input_sequence(self, sequence: Sequence) -> List[str]:
+        pass
 
     def generate_text(self, prefix: Optional[Sequence] = None, number_of_characters: int = 1000,
                       temperature: float = 1.0, break_on_suffix=None) -> Tuple[str, float]:
@@ -176,24 +179,32 @@ class CustomLanguageModel(LanguageModel, LM):
 
             return prediction, hidden
 
-    def score(self, word: Sequence, prefix: Optional[Sequence] = None, state: Optional = None,
+    def score(self, word: str, prefix: Optional[Sequence[str]] = None, state: Optional = None,
               normalized: bool = True, length_normalized: bool = False) -> Tuple[Any, float]:
-        # @TODO move normalized to self.__init__()
+        """
+        Score the input word given the state.
+        :param word: An atomic word or a sequence of characters.
+        :param prefix: Ignored.
+        :param state: Any start state. If None, using initial state, which is equivalent to `self.eos`.
+        :param normalized: Whether to use normalized softmax probabilities.
+        :param length_normalized: Whether to normalize the final log probability score by sequence length.
+        :return: State and log score.
+        """
+        # word is a str => for a char model seq of observations; for a word model one observation
 
         if prefix:
-            print(f'Prefix is ignored. Using "{self.eos}" as suffix.')
+            print(f'Prefix is ignored.')
 
         log_prob = 0.
 
         with torch.no_grad():
 
             if state is None:
-                # print(f'Using "{self.eos}" as prefix.')
                 state = self.initial_state()
 
             prediction, hidden = state
 
-            for character in list(word) + [self.eos]:
+            for character in self._prepare_input_sequence(word):
 
                 target_char_idx = self.dictionary.get_idx_for_item(character)
 
@@ -218,11 +229,65 @@ class CustomLanguageModel(LanguageModel, LM):
 
             return (prediction, hidden), out
 
-    def score_batch(self, words: List[Sequence], normalized: bool = True, length_normalized: bool = False):
+    def score_sample(self, sequence: Sequence, normalized: bool = True, length_normalized: bool = False,
+                     state: Optional = None) -> float:
+        """
+        Score a full sequence (of words [w_1, ..., w_n] or characters "c_1...c_n") using `self.eos` as final
+        observation.
+        :param sequence: Sequence of words or characters.
+        :param normalized: Whether to use normalized softmax probabilities.
+        :param length_normalized: Whether to normalize the final log probability score by sequence length.
+        :param state: Any start state. If None, using initial state, which is equivalent to `self.eos`.
+        :return: Log score.
+        """
+        log_prob = 0.
 
+        with torch.no_grad():
+
+            if state is None:
+                # print(f'Using "{self.eos}" as prefix.')
+                state = self.initial_state()
+
+            prediction, hidden = state
+
+            for character in list(sequence) + [self.eos]:
+
+                target_char_idx = self.dictionary.get_idx_for_item(character)
+
+                if normalized:
+                    word_weights = F.log_softmax(prediction, dim=0).cpu()
+                else:
+                    word_weights = prediction.exp().cpu()
+
+                prob = word_weights[target_char_idx]
+
+                log_prob += prob
+
+                input_tensor = torch.tensor([[target_char_idx]]).to(flair.device)
+
+                # get predicted weights
+                prediction, _, hidden = self.forward(input_tensor, hidden)
+                prediction = prediction.squeeze().detach()
+
+            out = log_prob.item()
+            if length_normalized:
+                out /= (len(sequence) + 1)
+
+            return out
+
+    def score_batch(self, words: List[Sequence], normalized: bool = True, length_normalized: bool = False) -> \
+            np.ndarray:
+        """
+        Score a batch of sequences (of words [w_1, ..., w_n] or of characters "c_1...c_m"). Use `self.eos` as initial
+        and final observations.
+        :param words: Sequences of words or characters.
+        :param normalized: Whether to use normalized softmax probabilities.
+        :param length_normalized: Whether to normalize the final log probabilities score by sequence lengths.
+        :return: Log scores for `words`.
+        """
         words = [list(w) for w in words]
         seq_lengths = [len(w) for w in words]
-        assert sorted(seq_lengths, reverse=True) == seq_lengths, ('Batch not sorted!')
+        assert sorted(seq_lengths, reverse=True) == seq_lengths, 'Batch not sorted!'
         seq_lengths = np.array(seq_lengths)
         longest_character_sequence_in_batch: int = seq_lengths[0]
 
@@ -307,6 +372,18 @@ class WordLanguageModel(CustomLanguageModel):
         self.delimiter = WORD_DELIMITER
         self.eos = WORD_EOS
 
+    def _prepare_input_sequence(self, sequence: Sequence) -> List[str]:
+        """
+        Turn an input sequence into a list of words. Possibly, apply tokenization on whitespace.
+        :param sequence: Input sequence.
+        :return: List of tokenized words.
+        """
+        if isinstance(sequence, str):
+            out_sequence = sequence.split(self.delimiter)
+        else:
+            out_sequence = [word for words in sequence for word in words.split(self.delimiter)]
+        return out_sequence
+
 
 class CharLanguageModel(CustomLanguageModel):
 
@@ -315,6 +392,19 @@ class CharLanguageModel(CustomLanguageModel):
 
         self.delimiter = CHAR_DELIMITER
         self.eos = CHAR_EOS
+
+    def _prepare_input_sequence(self, sequence: Sequence) -> List[str]:
+        """
+        Turn an input sequence into a list of words.
+        :param sequence: Input sequence.
+        :return: List of tokenized words.
+        """
+        if isinstance(sequence, (list, tuple)):
+            out_sequence = self.delimiter.join(sequence)
+        else:
+            out_sequence = sequence
+        return list(out_sequence)
+
 
 
 class CustomTextCorpus(TextCorpus):
