@@ -139,7 +139,7 @@ class CustomLanguageModel(LanguageModel, LM):
             return text, log_prob
 
     @classmethod
-    def load_language_model(cls, model: str, vocab_check=None):
+    def load_language_model(cls, model: str, vocab_check=None, *args, **kargs):
         """
         :param model: Name of / path to flair-compatible forward model.
         :param vocab_check: Any object that implements __contains__ to support vocabulary lookup (to speed up processing
