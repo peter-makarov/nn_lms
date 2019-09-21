@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Tuple, Any, Union, List
+from typing import Optional, Sequence, Tuple, Any, Union, List, Dict
 from pathlib import Path
 
 import abc
@@ -372,6 +372,19 @@ class CustomLanguageModel(LanguageModel, LM):
 
             return log_probs
 
+    def score_word_batch(self, words: List[str], state: Optional = None, normalized: bool = True,
+                         unk_score: float = None) -> List[Tuple[Any, float]]:
+        """
+        Batch-score a batch of words from a state. Useful for fast incremental sentence scoring (e.g. beam search).
+        :param words: Words.
+        :param state: State (prediction, hidden) representing previous context. If None, initial state is used.
+        :param normalized: Whether to use normalized softmax probabilities.
+        :param unk_score: If not None, will use this ln score for <unk>. This could be beneficial as, if <unk> had a
+            high relative frequency in the training data, it will get unreasonably high scores by the model.
+        :return: A list of updated states and log scores of `words`.
+        """
+        raise NotImplementedError
+
     def __contains__(self, word: str):
         # can it give any non-UNK score to word?
         if self.vocab_check:
@@ -403,6 +416,68 @@ class WordLanguageModel(CustomLanguageModel):
         else:
             out_sequence = [word for words in sequence for word in words.split(self.delimiter)]
         return out_sequence
+
+    def score_word_batch(self, words: List[str], state: Optional = None, normalized: bool = True,
+                         unk_score: float = None) -> List[Tuple[Any, float]]:
+        """
+        Batch-score a batch of words from a state. Useful for fast incremental sentence scoring (e.g. beam search).
+        :param words: Words.
+        :param state: State (prediction, hidden) representing previous context. If None, initial state is used.
+        :param normalized: Whether to use normalized softmax probabilities.
+        :param unk_score: If not None, will use this ln score for <unk>. This could be beneficial as, if <unk> had a
+            high relative frequency in the training data, it will get unreasonably high scores by the model.
+        :return: A list of updated states and log scores of `words`.
+        """
+        with torch.no_grad():
+
+            if state is None:
+                state = self.initial_state()
+
+            prediction, hidden = state
+
+            # 1. Integerize the words. New batch collapses all UNKs to one UNK type.
+            positions = np.zeros_like(words, dtype=np.uint16)
+            batch = [UNK_CODE]
+            for k, w in enumerate(words):
+                idx = self.dictionary.get_idx_for_item(w)
+                if idx != UNK_CODE:
+                    positions[k] = len(batch)
+                    batch.append(idx)
+            batch = np.array(batch, dtype=np.int64)
+            len_batch = batch.shape[0]
+
+            # 2. Get scores for the words.
+            if normalized:
+                word_weights = F.log_softmax(prediction, dim=0).cpu()
+            else:
+                word_weights = prediction.exp().cpu()
+
+            probs = word_weights[batch].numpy()
+
+            # 3. Update state.
+            input_tensor = torch.LongTensor(batch[np.newaxis, :]).to(flair.device)
+
+            # assume LSTM
+            hidden0 = hidden[0].repeat(1, len_batch, 1)
+            hidden1 = hidden[1].repeat(1, len_batch, 1)
+
+            prediction, _, (hidden0, hidden1) = self.forward(input_tensor, (hidden0, hidden1))
+
+            prediction = prediction.squeeze().detach()
+            hidden0 = hidden0.detach()
+            hidden1 = hidden1.detach()
+
+            # 4. Build new states, collect probabilities respecting UNK downweighting
+            uniq_states_probs = []
+            for k in range(len_batch):
+                k_prediction = prediction[k].squeeze()
+                k_slice = slice(k, k+1)
+                k_hidden = hidden0[:, k_slice, :].clone(), hidden1[:, k_slice, :].clone()  # not sure if copying needed
+                k_state = k_prediction, k_hidden
+                k_prob = unk_score if k == 0 and unk_score is not None else probs[k]
+                uniq_states_probs.append((k_state, k_prob))
+
+            return [uniq_states_probs[k] for k in positions]
 
 
 class CharLanguageModel(CustomLanguageModel):
