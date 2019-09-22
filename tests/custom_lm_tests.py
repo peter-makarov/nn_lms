@@ -52,6 +52,9 @@ class TestCustomLM(unittest.TestCase):
             context.append(words[0])
             score += prob
 
+        # verify that batch size 1 produces valid states:
+        _ = self.word_nn_language_model.score_word_batch(words1, state, unk_score=-18.0)
+
         print('score incremental:', score)
         print('score sequence:', self.word_nn_language_model.score_sample([ws[0] for ws in (words1, words2, words3)],
                                                                           unk_score=-18.0))

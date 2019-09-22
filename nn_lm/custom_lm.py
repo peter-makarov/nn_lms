@@ -463,7 +463,7 @@ class WordLanguageModel(CustomLanguageModel):
 
             prediction, _, (hidden0, hidden1) = self.forward(input_tensor, (hidden0, hidden1))
 
-            prediction = prediction.squeeze().detach()
+            prediction = prediction.squeeze(0).detach()  # only the first dim; second dim is batch size (can also be 1!)
             hidden0 = hidden0.detach()
             hidden1 = hidden1.detach()
 
