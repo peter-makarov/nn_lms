@@ -8,9 +8,9 @@ DATA = ["das ist ein hund".split(), "dddas ist ein hwund".split(), "dddas istttt
 
 class TestCustomLM(unittest.TestCase):
 
-    def __init__(self, *args, **kwargs):
-        self.word_nn_language_model = WordLanguageModel.load_language_model(os.environ['PATH2DEWORDLM'])
-        super().__init__(*args, **kwargs)
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.word_nn_language_model = WordLanguageModel.load_language_model(os.environ['PATH2DEWORDLM'])
 
     def test_score_unk(self):
 
@@ -32,6 +32,9 @@ class TestCustomLM(unittest.TestCase):
             print(f'scores_batch: {scores_batch}')
             print(f'scores_sample: {scores_sample}')
             print(f'scores_incremental: {scores_incremental}')
+            self.assertTrue(np.allclose(scores_batch, scores_sample))
+            self.assertTrue(np.allclose(scores_batch, scores_incremental))
+            self.assertTrue(np.allclose(scores_sample, scores_incremental))
 
     def test_score_word_batch(self):
 
@@ -55,9 +58,10 @@ class TestCustomLM(unittest.TestCase):
         # verify that batch size 1 produces valid states:
         _ = self.word_nn_language_model.score_word_batch(words1, state, unk_score=-18.0)
 
+        score_ = self.word_nn_language_model.score_sample([ws[0] for ws in (words1, words2, words3)], unk_score=-18.0)
         print('score incremental:', score)
-        print('score sequence:', self.word_nn_language_model.score_sample([ws[0] for ws in (words1, words2, words3)],
-                                                                          unk_score=-18.0))
+        print('score sequence:', score_)
+        self.assertTrue(np.isclose(score, score_))
 
 
 if __name__ == '__main__':
